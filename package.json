@@ -1,19 +1,21 @@
 {
   "name": "customer-management-backend",
   "version": "1.0.0",
-  "description": "Backend for Customer Management App",
+  "description": "Backend for Customer Management App using Node.js, Express, and SQLite",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "author": "Naveen Yadav",
-  "license": "ISC",
-  "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "sqlite3": "^5.1.6"
-  },
   "engines": {
     "node": "18.x"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6",
+    "cors": "^2.8.5",
+    "body-parser": "^1.20.2"
+  },
+  "installConfig": {
+    "buildFromSource": true
   }
 }
