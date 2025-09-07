@@ -2,6 +2,14 @@ const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const cors = require("cors");
 const app = express();
+
+app.use(cors({
+  origin: "https://customer-managemrnt-app-client.vercel.app/",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
+
+
 app.use(cors());
 app.use(express.json());
 
@@ -196,7 +204,8 @@ app.delete("/api/addresses/:addressId", (request, response) => {
 });
 
 //start server
-const PORT = 5000;
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
 });
+
