@@ -1,21 +1,27 @@
 {
-  "name": "customer-management-backend",
+  "name": "server",
   "version": "1.0.0",
-  "description": "Backend for Customer Management App using Node.js, Express, and SQLite",
+  "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "engines": {
-    "node": "18.x"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Naveen-8247/customer-managemnt-app-backend.git"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Naveen-8247/customer-managemnt-app-backend/issues"
+  },
+  "homepage": "https://github.com/Naveen-8247/customer-managemnt-app-backend#readme",
   "dependencies": {
-    "express": "^4.18.2",
-    "sqlite3": "^5.1.6",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
-    "body-parser": "^1.20.2"
-  },
-  "installConfig": {
-    "buildFromSource": true
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite3": "^5.1.7"
   }
 }

@@ -1,201 +1,218 @@
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const { authMiddleware, adminOnly, SECRET_KEY } = require("./authMiddleware");
 const cors = require("cors");
+
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: ["http://localhost:3000", "https://customer-management-app-client.vercel.app"],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
 app.use(express.json());
 
+// Database
 const db = new sqlite3.Database("./database.db", (error) => {
-  if (error) {
-    console.error("Database connection error:", error.message);
-  } else {
-    console.log("Connected to SQLite database.");
-  }
+  if (error) console.error("DB connection error:", error.message);
+  else console.log("Connected to SQLite database.");
 });
 
 db.run("PRAGMA foreign_keys = ON");
 
+// Tables
+db.run(`CREATE TABLE IF NOT EXISTS customers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  phone_number TEXT NOT NULL UNIQUE,
+  email TEXT UNIQUE,
+  gender TEXT CHECK(gender IN ('male','female','other'))
+)`);
 
+db.run(`CREATE TABLE IF NOT EXISTS addresses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL,
+  address_details TEXT NOT NULL,
+  city TEXT NOT NULL,
+  state TEXT NOT NULL,
+  pin_code TEXT NOT NULL,
+  FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+)`);
 
-// SQL to create customers table
-const createCustomersTableQuery = `
-  CREATE TABLE IF NOT EXISTS customers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    phone_number TEXT NOT NULL UNIQUE
-  )
-`;
-db.run(createCustomersTableQuery);
+db.run(`CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('admin','user'))
+)`);
 
-// SQL to create addresses table
-const createAddressesTableQuery = `
-  CREATE TABLE IF NOT EXISTS addresses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    customer_id INTEGER NOT NULL,
-    address_details TEXT NOT NULL,
-    city TEXT NOT NULL,
-    state TEXT NOT NULL,
-    pin_code TEXT NOT NULL,
-    FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
-  )
-`;
-db.run(createAddressesTableQuery);
-
-
-// Create a new customer
-app.post("/api/customers", (request, response) => {
-  const { first_name, last_name, phone_number } = request.body;
-
-  const createCustomerQuery = `
-    INSERT INTO customers (first_name, last_name, phone_number)
-    VALUES (:first_name, :last_name, :phone_number)
-  `;
-
-  db.run(
-    createCustomerQuery,
-    {
-      ":first_name": first_name,
-      ":last_name": last_name,
-      ":phone_number": phone_number
-    },
-    function (error) {
-      if (error) {
-        return response.status(400).json({ error: error.message });
-      }
-      response.json({ message: "Customer created", id: this.lastID });
-    }
-  );
-});
-
-// Get all customers
-app.get("/api/customers", (request, response) => {
-  const getAllCustomersQuery = "SELECT * FROM customers";
-
-  db.all(getAllCustomersQuery, [], (error, rows) => {
-    if (error) {
-      return response.status(400).json({ error: error.message });
-    }
-    response.json({ message: "success", data: rows });
-  });
-});
-
-// Get a single customer by ID
-app.get("/api/customers/:id", (request, response) => {
-  const getCustomerByIdQuery = "SELECT * FROM customers WHERE id = :id";
-
-  db.get(getCustomerByIdQuery, { ":id": request.params.id }, (error, row) => {
-    if (error) {
-      return response.status(400).json({ error: error.message });
-    }
+// Seed admin & user
+async function seedUsers() {
+  db.get(`SELECT * FROM users WHERE username='admin'`, async (err, row) => {
     if (!row) {
-      return response.status(404).json({ error: "Customer not found" });
+      const hashedAdmin = await bcrypt.hash("admin123", 10);
+      const hashedUser = await bcrypt.hash("user123", 10);
+      db.run(`INSERT INTO users (username,password,role) VALUES (?,?,?)`, ["admin", hashedAdmin, "admin"]);
+      db.run(`INSERT INTO users (username,password,role) VALUES (?,?,?)`, ["user", hashedUser, "user"]);
+      console.log("Seeded admin and user accounts");
     }
-    response.json({ message: "success", data: row });
+  });
+}
+seedUsers();
+
+// Login route
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+  db.get(`SELECT * FROM users WHERE username=?`, [username], async (err, user) => {
+    if (err || !user) return res.status(400).json({ error: "Invalid credentials" });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(400).json({ error: "Invalid credentials" });
+
+    // Token without expiry
+    const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY);
+    res.json({ token, role: user.role });
   });
 });
 
-// Update a customer
-app.put("/api/customers/:id", (request, response) => {
-  const { first_name, last_name, phone_number } = request.body;
-
-  const updateCustomerQuery = `
-    UPDATE customers
-    SET first_name = :first_name, last_name = :last_name, phone_number = :phone_number
-    WHERE id = :id
-  `;
-
+// CRUD APIs
+app.post("/api/customers", authMiddleware, adminOnly, (req, res) => {
+  const { first_name, last_name, phone_number, email, gender } = req.body;
   db.run(
-    updateCustomerQuery,
-    {
-      ":first_name": first_name,
-      ":last_name": last_name,
-      ":phone_number": phone_number,
-      ":id": request.params.id
-    },
+    `INSERT INTO customers (first_name,last_name,phone_number,email,gender) VALUES (?,?,?,?,?)`,
+    [first_name, last_name, phone_number, email, gender],
     function (error) {
-      if (error) {
-        return response.status(400).json({ error: error.message });
-      }
-      if (this.changes === 0) {
-        return response.status(404).json({ error: "Customer not found" });
-      }
-      response.json({ message: "Customer updated" });
+      if (error) return res.status(400).json({ error: error.message });
+      res.json({ message: "Customer created", id: this.lastID });
     }
   );
 });
 
-// Delete a customer
-app.delete("/api/customers/:id", (request, response) => {
-  const deleteCustomerQuery = "DELETE FROM customers WHERE id = :id";
-
-  db.run(deleteCustomerQuery, { ":id": request.params.id }, function (error) {
-    if (error) {
-      return response.status(400).json({ error: error.message });
-    }
-    if (this.changes === 0) {
-      return response.status(404).json({ error: "Customer not found" });
-    }
-    response.json({ message: "Customer deleted" });
+app.get("/api/customers", authMiddleware, (req, res) => {
+  db.all(`SELECT * FROM customers`, [], (error, rows) => {
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ message: "success", data: rows });
   });
 });
 
+app.get("/api/customers/:id", authMiddleware, (req, res) => {
+  db.get(`SELECT * FROM customers WHERE id=?`, [req.params.id], (error, row) => {
+    if (error) return res.status(400).json({ error: error.message });
+    if (!row) return res.status(404).json({ error: "Customer not found" });
+    res.json({ message: "success", data: row });
+  });
+});
+
+app.put("/api/customers/:id", authMiddleware, adminOnly, (req, res) => {
+  const { first_name, last_name, phone_number, email, gender } = req.body;
+  db.run(
+    `UPDATE customers SET first_name=?, last_name=?, phone_number=?, email=?, gender=? WHERE id=?`,
+    [first_name, last_name, phone_number, email, gender, req.params.id],
+    function (error) {
+      if (error) return res.status(400).json({ error: error.message });
+      if (this.changes === 0) return res.status(404).json({ error: "Customer not found" });
+      res.json({ message: "Customer updated" });
+    }
+  );
+});
 
 // Add address for a customer
-app.post("/api/customers/:id/addresses", (request, response) => {
-  const { address_details, city, state, pin_code } = request.body;
-
-  const addAddressQuery = `
-    INSERT INTO addresses (customer_id, address_details, city, state, pin_code)
-    VALUES (:customer_id, :address_details, :city, :state, :pin_code)
-  `;
+app.post("/api/customers/:id/addresses", authMiddleware, adminOnly, (req, res) => {
+  const { address_details, city, state, pin_code } = req.body;
+  const customerId = req.params.id;
 
   db.run(
-    addAddressQuery,
-    {
-      ":customer_id": request.params.id,
-      ":address_details": address_details,
-      ":city": city,
-      ":state": state,
-      ":pin_code": pin_code
-    },
+    `INSERT INTO addresses (customer_id, address_details, city, state, pin_code) VALUES (?, ?, ?, ?, ?)`,
+    [customerId, address_details, city, state, pin_code],
     function (error) {
-      if (error) {
-        return response.status(400).json({ error: error.message });
-      }
-      response.json({ message: "Address added", id: this.lastID });
+      if (error) return res.status(400).json({ error: error.message });
+      res.json({ message: "Address added", id: this.lastID });
     }
   );
 });
 
-// Get all addresses for a customer
-app.get("/api/customers/:id/addresses", (request, response) => {
-  const getAddressesQuery = "SELECT * FROM addresses WHERE customer_id = :customer_id";
-
-  db.all(getAddressesQuery, { ":customer_id": request.params.id }, (error, rows) => {
-    if (error) {
-      return response.status(400).json({ error: error.message });
-    }
-    response.json({ message: "success", data: rows });
+// Get all addresses of a customer
+app.get("/api/customers/:id/addresses", authMiddleware, (req, res) => {
+  const customerId = req.params.id;
+  db.all(`SELECT * FROM addresses WHERE customer_id=?`, [customerId], (error, rows) => {
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ message: "success", data: rows });
   });
 });
 
 // Delete an address
-app.delete("/api/addresses/:addressId", (request, response) => {
-  const deleteAddressQuery = "DELETE FROM addresses WHERE id = :addressId";
+app.delete("/api/customers/:customerId/addresses/:addressId", authMiddleware, adminOnly, (req, res) => {
+  const { addressId } = req.params;
 
-  db.run(deleteAddressQuery, { ":addressId": request.params.addressId }, function (error) {
-    if (error) {
-      return response.status(400).json({ error: error.message });
+  db.run(
+    `DELETE FROM addresses WHERE id=?`,
+    [addressId],
+    function (error) {
+      if (error) return res.status(400).json({ error: error.message });
+      if (this.changes === 0) return res.status(404).json({ error: "Address not found" });
+      res.json({ message: "Address deleted successfully" });
     }
-    if (this.changes === 0) {
-      return response.status(404).json({ error: "Address not found" });
-    }
-    response.json({ message: "Address deleted" });
+  );
+});
+
+
+
+app.delete("/api/customers/:id", authMiddleware, adminOnly, (req, res) => {
+  db.run(`DELETE FROM customers WHERE id=?`, [req.params.id], function (error) {
+    if (error) return res.status(400).json({ error: error.message });
+    if (this.changes === 0) return res.status(404).json({ error: "Customer not found" });
+    res.json({ message: "Customer deleted" });
   });
 });
 
-//start server
+// Get logged-in user profile
+app.get("/api/profile", authMiddleware, (req, res) => {
+  const userId = req.user.id;
+  db.get(`SELECT id, username, role FROM users WHERE id=?`, [userId], (err, row) => {
+    if (err) return res.status(400).json({ error: err.message });
+    res.json({ message: "success", data: row });
+  });
+});
+
+// Update user profile with current password check
+app.put("/api/profile", authMiddleware, (req, res) => {
+  const { username, currentPassword, newPassword } = req.body;
+  const userId = req.user.id;
+
+  if (!currentPassword) return res.status(400).json({ error: "Current password required" });
+
+  // Get the user
+  db.get(`SELECT * FROM users WHERE id=?`, [userId], async (err, user) => {
+    if (err || !user) return res.status(400).json({ error: "User not found" });
+
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match) return res.status(400).json({ error: "Current password is incorrect" });
+
+    let query = `UPDATE users SET username=?`;
+    let params = [username];
+
+    if (newPassword) {
+      const hashedNew = await bcrypt.hash(newPassword, 10);
+      query += `, password=?`;
+      params.push(hashedNew);
+    }
+
+    query += ` WHERE id=?`;
+    params.push(userId);
+
+    db.run(query, params, function (err) {
+      if (err) return res.status(400).json({ error: err.message });
+      res.json({ message: "Profile updated successfully" });
+    });
+  });
+});
+
+
+
+
+// Start server
 const PORT = 5000;
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
