@@ -6,22 +6,15 @@ const { authMiddleware, adminOnly, SECRET_KEY } = require("./authMiddleware");
 const cors = require("cors");
 
 const app = express();
-<<<<<<< HEAD
-app.use(cors({
-  origin: ["http://localhost:3000", "https://customer-management-app-client.vercel.app"],
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true
-}));
-=======
 
 app.use(cors({
-  origin: "https://customer-managemrnt-app-client.vercel.app", 
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  origin: ["http://localhost:3000", "https://customer-managemrnt-app-client.vercel.app"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
 }));
 
 app.use(cors());
->>>>>>> ac05416089e072c0b266ca75115029f0cc596982
+
 app.use(express.json());
 
 // Database
