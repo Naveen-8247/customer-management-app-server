@@ -52,19 +52,27 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK(role IN ('admin','user'))
 )`);
 
-// Seed admin & user
+
+//seed user and admin 
 async function seedUsers() {
   db.get(`SELECT * FROM users WHERE username='admin'`, async (err, row) => {
     if (!row) {
       const hashedAdmin = await bcrypt.hash("admin123", 10);
-      const hashedUser = await bcrypt.hash("user123", 10);
       db.run(`INSERT INTO users (username,password,role) VALUES (?,?,?)`, ["admin", hashedAdmin, "admin"]);
+      console.log("Seeded admin account");
+    }
+  });
+
+  db.get(`SELECT * FROM users WHERE username='user'`, async (err, row) => {
+    if (!row) {
+      const hashedUser = await bcrypt.hash("user123", 10);
       db.run(`INSERT INTO users (username,password,role) VALUES (?,?,?)`, ["user", hashedUser, "user"]);
-      console.log("Seeded admin and user accounts");
+      console.log("Seeded user account");
     }
   });
 }
 seedUsers();
+
 
 // Login route
 app.post("/api/login", (req, res) => {
